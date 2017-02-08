@@ -1,25 +1,24 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License. See License.txt in the project root for license information. 
 
-using Microsoft.Azure.Management.AppService.Fluent;
-using Microsoft.Azure.Management.Cdn.Fluent;
-using Microsoft.Azure.Management.Cdn.Fluent.Models;
-using Microsoft.Azure.Management.Fluent;
-using Microsoft.Azure.Management.Resource.Fluent;
-using Microsoft.Azure.Management.Resource.Fluent.Authentication;
-using Microsoft.Azure.Management.Resource.Fluent.Core;
-using Microsoft.Azure.Management.Resource.Fluent.Core.ResourceActions;
 using Microsoft.Azure.Management.Samples.Common;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Net.Http;
-using System.Threading.Tasks;
+using Microsoft.Azure.Management.Fluent;
+using Microsoft.Azure.Management.Resource.Fluent;
+using Microsoft.Azure.Management.Resource.Fluent.Core;
+using Microsoft.Azure.Management.Resource.Fluent.Core.ResourceActions;
+using Microsoft.Azure.Management.Cdn.Fluent;
+using Microsoft.Azure.Management.Cdn.Fluent.Models;
+using Microsoft.Azure.Management.AppService.Fluent;
 
 namespace ManageCdn
 {
     public class Program
     {
+        private static readonly string Suffix = ".azurewebsites.net";
+
         /**
          * Azure CDN sample for managing CDN profiles:
          * - Create 8 web apps in 8 regions:
@@ -31,19 +30,106 @@ namespace ManageCdn
          * - Create CDN profile using Standard Verizon SKU with endpoints in each region of Web apps.
          * - Load some content (referenced by Web Apps) to the CDN endpoints.
          */
-        private static readonly string RG_NAME = ResourceNamer.RandomResourceName("rgCDN_", 24);
-        private static readonly string SUFFIX = ".azurewebsites.net";
-
-        public static void Main(string[] args)
+        public static void RunSample(IAzure azure)
         {
             string cdnProfileName = Utilities.CreateRandomName("cdnStandardProfile");
+            string rgName = SdkContext.RandomResourceName("rgCDN_", 24);
             var appNames = new string[8];
 
             try
             {
+
+                azure.ResourceGroups.Define(rgName)
+                        .WithRegion(Region.USCentral)
+                        .Create();
+
+                // ============================================================
+                // Create 8 websites
+                for (int i = 0; i < 8; i++)
+                {
+                    appNames[i] = SdkContext.RandomResourceName("webapp" + (i + 1) + "-", 20);
+                }
+
+                // 2 in US
+                CreateWebApp(azure, rgName, appNames[0], Region.USWest);
+                CreateWebApp(azure, rgName, appNames[1], Region.USEast);
+
+                // 2 in EU
+                CreateWebApp(azure, rgName, appNames[2], Region.EuropeWest);
+                CreateWebApp(azure, rgName, appNames[3], Region.EuropeNorth);
+
+                // 2 in Southeast
+                CreateWebApp(azure, rgName, appNames[4], Region.AsiaSouthEast);
+                CreateWebApp(azure, rgName, appNames[5], Region.AustraliaSouthEast);
+
+                // 1 in Brazil
+                CreateWebApp(azure, rgName, appNames[6], Region.BrazilSouth);
+
+                // 1 in Japan
+                CreateWebApp(azure, rgName, appNames[7], Region.JapanWest);
+
+                // =======================================================================================
+                // Create CDN profile using Standard Verizon SKU with endpoints in each region of Web apps.
+                Utilities.Log("Creating a CDN Profile");
+
+                // create Cdn Profile definition object that will let us do a for loop
+                // to define all 8 endpoints and then parallelize their creation
+                var profileDefinition = azure.CdnProfiles.Define(cdnProfileName)
+                        .WithRegion(Region.USCentral)
+                        .WithExistingResourceGroup(rgName)
+                        .WithStandardVerizonSku();
+
+                // define all the endpoints. We need to keep track of the last creatable stage
+                // to be able to call create on the entire Cdn profile deployment definition.
+                ICreatable<ICdnProfile> cdnCreatable = null;
+                foreach (var webSite in appNames)
+                {
+                    cdnCreatable = profileDefinition
+                            .DefineNewEndpoint()
+                                .WithOrigin(webSite + Suffix)
+                                .WithHostHeader(webSite + Suffix)
+                                .WithCompressionEnabled(true)
+                                .WithContentTypeToCompress("application/javascript")
+                                .WithQueryStringCachingBehavior(QueryStringCachingBehavior.IgnoreQueryString)
+                            .Attach();
+                }
+
+                // create profile and then all the defined endpoints in parallel
+                ICdnProfile profile = cdnCreatable.Create();
+
+                // =======================================================================================
+                // Load some content (referenced by Web Apps) to the CDN endpoints.
+                var contentToLoad = new List<string>();
+                contentToLoad.Add("/server.js");
+                contentToLoad.Add("/pictures/microsoft_logo.png");
+
+                foreach (ICdnEndpoint endpoint in profile.Endpoints.Values)
+                {
+                    endpoint.LoadContent(contentToLoad);
+                }
+
+            }
+            finally
+            {
+                try
+                {
+                    Utilities.Log("Deleting Resource Group: " + rgName);
+                    azure.ResourceGroups.DeleteByName(rgName);
+                    Utilities.Log("Deleted Resource Group: " + rgName);
+                }
+                catch
+                {
+                    Utilities.Log("Did not create any resources in Azure. No clean up is necessary");
+                }
+            }
+        }
+        public static void Main(string[] args)
+        {
+            try
+            {
                 //=================================================================
                 // Authenticate
-                var credentials = AzureCredentials.FromFile(Environment.GetEnvironmentVariable("AZURE_AUTH_LOCATION"));
+                var credentials = SdkContext.AzureCredentialsFactory.FromFile(Environment.GetEnvironmentVariable("AZURE_AUTH_LOCATION"));
 
                 var azure = Azure
                     .Configure()
@@ -52,139 +138,60 @@ namespace ManageCdn
                     .WithDefaultSubscription();
 
                 // Print selected subscription
-                Console.WriteLine("Selected subscription: " + azure.SubscriptionId);
-                
-                try
-                {
+                Utilities.Log("Selected subscription: " + azure.SubscriptionId);
 
-                    azure.ResourceGroups.Define(RG_NAME)
-                            .WithRegion(Region.US_CENTRAL)
-                            .Create();
-
-                    // ============================================================
-                    // Create 8 websites
-                    for (int i = 0; i < 8; i++)
-                    {
-                        appNames[i] = ResourceNamer.RandomResourceName("webapp" + (i + 1) + "-", 20);
-                    }
-
-                    // 2 in US
-                    CreateWebApp(azure, appNames[0], Region.US_WEST);
-                    CreateWebApp(azure, appNames[1], Region.US_EAST);
-
-                    // 2 in EU
-                    CreateWebApp(azure, appNames[2], Region.EUROPE_WEST);
-                    CreateWebApp(azure, appNames[3], Region.EUROPE_NORTH);
-
-                    // 2 in Southeast
-                    CreateWebApp(azure, appNames[4], Region.ASIA_SOUTHEAST);
-                    CreateWebApp(azure, appNames[5], Region.AUSTRALIA_SOUTHEAST);
-
-                    // 1 in Brazil
-                    CreateWebApp(azure, appNames[6], Region.BRAZIL_SOUTH);
-
-                    // 1 in Japan
-                    CreateWebApp(azure, appNames[7], Region.JAPAN_WEST);
-                    // =======================================================================================
-                    // Create CDN profile using Standard Verizon SKU with endpoints in each region of Web apps.
-                    Console.WriteLine("Creating a CDN Profile");
-
-                    // create Cdn Profile definition object that will let us do a for loop
-                    // to define all 8 endpoints and then parallelize their creation
-                    var profileDefinition = azure.CdnProfiles.Define(cdnProfileName)
-                            .WithRegion(Region.US_CENTRAL)
-                            .WithExistingResourceGroup(RG_NAME)
-                            .WithStandardVerizonSku();
-
-                    // define all the endpoints. We need to keep track of the last creatable stage
-                    // to be able to call create on the entire Cdn profile deployment definition.
-                    ICreatable<ICdnProfile> cdnCreatable = null;
-                    foreach(var webSite in appNames)
-                    {
-                        cdnCreatable = profileDefinition
-                                .DefineNewEndpoint()
-                                    .WithOrigin(webSite + SUFFIX)
-                                    .WithHostHeader(webSite + SUFFIX)
-                                    .WithCompressionEnabled(true)
-                                    .WithContentTypeToCompress("application/javascript")
-                                    .WithQueryStringCachingBehavior(QueryStringCachingBehavior.IgnoreQueryString)
-                                .Attach();
-                    }
-
-                    // create profile and then all the defined endpoints in parallel
-                    ICdnProfile profile = cdnCreatable.Create();
-
-                    // =======================================================================================
-                    // Load some content (referenced by Web Apps) to the CDN endpoints.
-                    var contentToLoad = new List<string>();
-                    contentToLoad.Add("/server.js");
-                    contentToLoad.Add("/pictures/microsoft_logo.png");
-
-                    foreach(ICdnEndpoint endpoint in profile.Endpoints.Values)
-                    {
-                        endpoint.LoadContent(contentToLoad);
-                    }
-
-                }
-                catch (Exception f)
-                {
-                    Console.WriteLine(f);
-                }
-                finally
-                {
-                    try
-                    {
-                        Console.WriteLine("Deleting Resource Group: " + RG_NAME);
-                        azure.ResourceGroups.DeleteByName(RG_NAME);
-                        Console.WriteLine("Deleted Resource Group: " + RG_NAME);
-                    }
-                    catch (Exception e)
-                    {
-                        Console.WriteLine("Did not create any resources in Azure. No clean up is necessary");
-                    }
-                }
+                RunSample(azure);
             }
             catch (Exception e)
             {
-                Console.WriteLine(e);
+                Utilities.Log(e);
             }
         }
 
-        private static IWebApp CreateWebApp(IAzure azure, string appName, Region region)
+        private static IWebApp CreateWebApp(IAzure azure, string rgName, string appName, Region region)
         {
-            var planName = ResourceNamer.RandomResourceName("jplan_", 15);
-            var appUrl = appName + SUFFIX;
+            var planName = SdkContext.RandomResourceName("jplan_", 15);
+            var appUrl = appName + Suffix;
 
-            Console.WriteLine("Creating web app " + appName + " with master branch...");
+            Utilities.Log("Creating web app " + appName + " with master branch...");
 
             var app = azure.WebApps
                     .Define(appName)
-                    .WithExistingResourceGroup(RG_NAME)
+                    .WithExistingResourceGroup(rgName)
                     .WithNewAppServicePlan(planName)
                     .WithRegion(region)
-                    .WithPricingTier(AppServicePricingTier.Standard_S1)
-                    .WithJavaVersion(JavaVersion.Java_8_Newest)
-                    .WithWebContainer(WebContainer.Tomcat_8_0_Newest)
+                    .WithPricingTier(AppServicePricingTier.StandardS1)
+                    .WithJavaVersion(JavaVersion.V8Newest)
+                    .WithWebContainer(WebContainer.Tomcat8_0Newest)
                     .DefineSourceControl()
                         .WithPublicGitRepository("https://github.com/jianghaolu/azure-site-test.git")
                         .WithBranch("master")
                         .Attach()
                     .Create();
 
-            Console.WriteLine("Created web app " + app.Name);
+            Utilities.Log("Created web app " + app.Name);
             Utilities.Print(app);
 
-            Console.WriteLine("CURLing " + appUrl + "...");
-            Console.WriteLine(CheckAddress("http://" + appUrl));
+            Utilities.Log("CURLing " + appUrl + "...");
+            Utilities.Log(CheckAddress("http://" + appUrl));
             return app;
         }
 
         private static HttpResponseMessage CheckAddress(string url)
         {
-            using (var client = new HttpClient())
+            try
             {
-                return client.GetAsync(url).Result;
+                using (var client = new HttpClient())
+                {
+                    return client.GetAsync(url).Result;
+                }
             }
+            catch(Exception ex)
+            {
+                Utilities.Log(ex);
+            }
+
+            return null;
         }
     }
 }
