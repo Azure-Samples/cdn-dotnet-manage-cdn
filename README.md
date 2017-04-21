@@ -4,7 +4,7 @@ platforms: .Net
 author: hovsepm
 ---
 
-#Getting Started with Cdn - Manage Cdn - in .Net #
+# Getting Started with Cdn - Manage Cdn - in .Net #
 
           Azure CDN sample for managing CDN profiles:
           - Create 8 web apps in 8 regions:

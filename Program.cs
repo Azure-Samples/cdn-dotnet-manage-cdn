@@ -6,9 +6,9 @@ using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using Microsoft.Azure.Management.Fluent;
-using Microsoft.Azure.Management.Resource.Fluent;
-using Microsoft.Azure.Management.Resource.Fluent.Core;
-using Microsoft.Azure.Management.Resource.Fluent.Core.ResourceActions;
+using Microsoft.Azure.Management.ResourceManager.Fluent;
+using Microsoft.Azure.Management.ResourceManager.Fluent.Core;
+using Microsoft.Azure.Management.ResourceManager.Fluent.Core.ResourceActions;
 using Microsoft.Azure.Management.Cdn.Fluent;
 using Microsoft.Azure.Management.Cdn.Fluent.Models;
 using Microsoft.Azure.Management.AppService.Fluent;
@@ -133,7 +133,7 @@ namespace ManageCdn
 
                 var azure = Azure
                     .Configure()
-                    .WithLogLevel(HttpLoggingDelegatingHandler.Level.BASIC)
+                    .WithLogLevel(HttpLoggingDelegatingHandler.Level.Basic)
                     .Authenticate(credentials)
                     .WithDefaultSubscription();
 
@@ -150,21 +150,19 @@ namespace ManageCdn
 
         private static IWebApp CreateWebApp(IAzure azure, string rgName, string appName, Region region)
         {
-            var planName = SdkContext.RandomResourceName("jplan_", 15);
             var appUrl = appName + Suffix;
 
             Utilities.Log("Creating web app " + appName + " with master branch...");
 
             var app = azure.WebApps
                     .Define(appName)
-                    .WithExistingResourceGroup(rgName)
-                    .WithNewAppServicePlan(planName)
                     .WithRegion(region)
-                    .WithPricingTier(AppServicePricingTier.StandardS1)
+                    .WithExistingResourceGroup(rgName)
+                    .WithNewWindowsPlan(PricingTier.StandardS1)
                     .WithJavaVersion(JavaVersion.V8Newest)
                     .WithWebContainer(WebContainer.Tomcat8_0Newest)
                     .DefineSourceControl()
-                        .WithPublicGitRepository("https://github.com/jianghaolu/azure-site-test.git")
+                        .WithPublicGitRepository("https://github.com/jianghaolu/azure-site-test")
                         .WithBranch("master")
                         .Attach()
                     .Create();
@@ -173,25 +171,8 @@ namespace ManageCdn
             Utilities.Print(app);
 
             Utilities.Log("CURLing " + appUrl + "...");
-            Utilities.Log(CheckAddress("http://" + appUrl));
+            Utilities.Log(Utilities.CheckAddress("http://" + appUrl));
             return app;
-        }
-
-        private static HttpResponseMessage CheckAddress(string url)
-        {
-            try
-            {
-                using (var client = new HttpClient())
-                {
-                    return client.GetAsync(url).Result;
-                }
-            }
-            catch(Exception ex)
-            {
-                Utilities.Log(ex);
-            }
-
-            return null;
         }
     }
 }
