@@ -1,0 +1,4 @@
+C:\Sources\dotnet-samples\cdn-dotnet-manage-cdn\bin\Debug\net452\ManageCdn.runtimeconfig.json
+C:\Sources\dotnet-samples\cdn-dotnet-manage-cdn\bin\Debug\net452\ManageCdn.runtimeconfig.dev.json
+C:\Sources\dotnet-samples\cdn-dotnet-manage-cdn\obj\Debug\net452\ManageCdn.csproj.ManageCdn.exe.config
+C:\Sources\dotnet-samples\cdn-dotnet-manage-cdn\obj\Debug\net452\ManageCdn.csproj.CoreCompileInputs.cache
