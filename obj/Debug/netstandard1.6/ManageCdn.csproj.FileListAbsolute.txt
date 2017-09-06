@@ -1,2 +1,0 @@
-C:\Sources\dotnet-samples\cdn-dotnet-manage-cdn\bin\Debug\netstandard1.6\ManageCdn.deps.json
-C:\Sources\dotnet-samples\cdn-dotnet-manage-cdn\obj\Debug\netstandard1.6\ManageCdn.csproj.CoreCompileInputs.cache
