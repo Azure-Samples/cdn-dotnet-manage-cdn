@@ -1,4 +1,7 @@
 ---
+page_type: sample
+languages: java
+products: azure
 services: Cdn
 platforms: dotnet
 author: yaohaizh
