@@ -4,22 +4,22 @@ languages:
 - csharp
 products:
 - azure
-services: Cdn
-platforms: dotnet
-author: yaohaizh
+extensions:
+- services: Cdn
+- platforms: dotnet
 ---
 
 # Getting started on managing CDN in C# #
 
-          Azure CDN sample for managing CDN profiles:
-          - Create 8 web apps in 8 regions:
-              2 in US
-              2 in EU
-              2 in Southeast
-              1 in Brazil
-              1 in Japan
-          - Create CDN profile using Standard Verizon SKU with endpoints in each region of Web apps.
-          - Load some content (referenced by Web Apps) to the CDN endpoints.
+ Azure CDN sample for managing CDN profiles:
+ - Create 8 web apps in 8 regions:
+     2 in US
+     2 in EU
+     2 in Southeast
+     1 in Brazil
+     1 in Japan
+ - Create CDN profile using Standard Verizon SKU with endpoints in each region of Web apps.
+ - Load some content (referenced by Web Apps) to the CDN endpoints.
 
 
 ## Running this Sample ##
