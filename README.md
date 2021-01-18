@@ -5,8 +5,8 @@ languages:
 products:
 - azure
 extensions:
-- services: Cdn
-- platforms: dotnet
+  services: Cdn
+  platforms: dotnet
 ---
 
 # Getting started on managing CDN in C# #
