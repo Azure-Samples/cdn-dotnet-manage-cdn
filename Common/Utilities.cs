@@ -13,7 +13,7 @@ using System.Threading;
 using System.Net.Http.Headers;
 using Renci.SshNet;
 
-namespace Microsoft.Azure.Management.Samples.Common
+namespace Azure.ResourceManager.Samples.Common
 {
     public static class Utilities
     {
@@ -207,7 +207,7 @@ namespace Microsoft.Azure.Management.Samples.Common
                                 client.DefaultRequestHeaders.Add(header.Key, header.Value);
                             }
                         }
-                        return client.GetAsync(url).Result.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                        return $"Ping: {url}: {client.GetAsync(url).Result.StatusCode}";
                     }
                 }
                 catch (Exception ex)
