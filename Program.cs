@@ -57,97 +57,101 @@ namespace ManageCdn
                 websites.Add(await CreateWebApp(resourceGroup, AzureLocation.WestUS));
 
                 //// 2 in EU
-                websites.Add(await CreateWebApp(resourceGroup, AzureLocation.NorthEurope));
-                websites.Add(await CreateWebApp(resourceGroup, AzureLocation.WestEurope));
+                //websites.Add(await CreateWebApp(resourceGroup, AzureLocation.NorthEurope));
+                //websites.Add(await CreateWebApp(resourceGroup, AzureLocation.WestEurope));
 
-                // 2 in Southeast
-                await CreateWebApp(resourceGroup, AzureLocation.EastAsia);
-                await CreateWebApp(resourceGroup, AzureLocation.SoutheastAsia);
+                //// 2 in Southeast
+                //await CreateWebApp(resourceGroup, AzureLocation.EastAsia);
+                //await CreateWebApp(resourceGroup, AzureLocation.SoutheastAsia);
 
-                // 1 in Brazil
-                await CreateWebApp(resourceGroup, AzureLocation.BrazilSouth);
+                //// 1 in Brazil
+                //await CreateWebApp(resourceGroup, AzureLocation.BrazilSouth);
 
-                // 1 in Japan
-                await CreateWebApp(resourceGroup, AzureLocation.JapanWest);
+                //// 1 in Japan
+                //await CreateWebApp(resourceGroup, AzureLocation.JapanWest);
 
                 // =======================================================================================
                 // Create CDN profile using Standard Verizon SKU with endpoints in each region of Web apps.
                 Utilities.Log("Creating a CDN Profile");
                 string afdProfileName = Utilities.CreateRandomName("AFDProfile");
-                ProfileData afdProfileInput = new ProfileData("Global", new CdnSku { Name = CdnSkuName.StandardAzureFrontDoor })
+                ProfileData afdProfileInput = new ProfileData("Global", new CdnSku { Name = CdnSkuName.PremiumAzureFrontDoor })
                 {
                     OriginResponseTimeoutSeconds = 60
                 };
                 var afdProfileLro = await resourceGroup.GetProfiles().CreateOrUpdateAsync(WaitUntil.Completed, afdProfileName, afdProfileInput);
                 ProfileResource afdProfile = afdProfileLro.Value;
 
+
+                // CreateAfdEndpoint
+                Utilities.Log($"Creating a FrontDoor endpoint..");
+                string afdEndpointName = Utilities.CreateRandomName("afdtestendpoint");
+                FrontDoorEndpointData input = new FrontDoorEndpointData(AzureLocation.WestUS);
+                var afdEndpointLro = await afdProfile.GetFrontDoorEndpoints().CreateOrUpdateAsync(WaitUntil.Completed, afdEndpointName, input);
+                FrontDoorEndpointResource afdEndpointInstance = afdEndpointLro.Value;
+
+                // CreateAfdOriginGroup
+                Utilities.Log($"Creating a origin group..");
+                string afdOriginGroupName = Utilities.CreateRandomName("AfdOriginGroup");
+                FrontDoorOriginGroupData afdOriginGroupInput = new FrontDoorOriginGroupData
+                {
+                    HealthProbeSettings = new HealthProbeSettings
+                    {
+                        ProbePath = "/healthz",
+                        ProbeRequestType = HealthProbeRequestType.Head,
+                        ProbeProtocol = HealthProbeProtocol.Https,
+                        ProbeIntervalInSeconds = 60
+                    },
+                    LoadBalancingSettings = new LoadBalancingSettings
+                    {
+                        SampleSize = 5,
+                        SuccessfulSamplesRequired = 4,
+                        AdditionalLatencyInMilliseconds = 200
+                    }
+                };
+                var afdOriginGroupLro = await afdProfile.GetFrontDoorOriginGroups().CreateOrUpdateAsync(WaitUntil.Completed, afdOriginGroupName, afdOriginGroupInput);
+                FrontDoorOriginGroupResource afdOriginGroup = afdOriginGroupLro.Value;
+
                 foreach (var website in websites)
                 {
-                    // CreateAfdEndpoint
-                    Utilities.Log($"Creating a FrontDoor endpoint for {website.Data.Name}");
-                    string afdEndpointName = Utilities.CreateRandomName("afdtestendpoint");
-                    FrontDoorEndpointData input = new FrontDoorEndpointData(AzureLocation.WestUS);
-                    var afdEndpointLro = await afdProfile.GetFrontDoorEndpoints().CreateOrUpdateAsync(WaitUntil.Completed, afdEndpointName, input);
-                    FrontDoorEndpointResource afdEndpointInstance = afdEndpointLro.Value;
-
-                    // CreateAfdOriginGroup
-                    Utilities.Log($"Creating a FrontDoor origin group");
-                    string afdOriginGroupName = Utilities.CreateRandomName("AfdOriginGroup");
-                    FrontDoorOriginGroupData afdOriginGroupInput = new FrontDoorOriginGroupData
-                    {
-                        HealthProbeSettings = new HealthProbeSettings
-                        {
-                            ProbePath = "/healthz",
-                            ProbeRequestType = HealthProbeRequestType.Head,
-                            ProbeProtocol = HealthProbeProtocol.Https,
-                            ProbeIntervalInSeconds = 60
-                        },
-                        LoadBalancingSettings = new LoadBalancingSettings
-                        {
-                            SampleSize = 5,
-                            SuccessfulSamplesRequired = 4,
-                            AdditionalLatencyInMilliseconds = 200
-                        }
-                    };
-                    var afdOriginGroupLro = await afdProfile.GetFrontDoorOriginGroups().CreateOrUpdateAsync(WaitUntil.Completed, afdOriginGroupName, afdOriginGroupInput);
-                    FrontDoorOriginGroupResource afdOriginGroup = afdOriginGroupLro.Value;
-
                     // origin
-                    Utilities.Log($"Creating a FrontDoor origin");
+                    Utilities.Log($"Creating an origin for {website.Data.Location}-{website.Data.Name}");
                     string afdOriginName = Utilities.CreateRandomName("AfdOrigin");
                     FrontDoorOriginData afdOriginInput = new FrontDoorOriginData
                     {
-                        HostName = website.Data.DefaultHostName
+                        HostName = website.Data.DefaultHostName,
+                        Priority = 1,
+                        Weight = 1000
                     };
                     var afdOriginLro = await afdOriginGroup.GetFrontDoorOrigins().CreateOrUpdateAsync(WaitUntil.Completed, afdOriginName, afdOriginInput);
                     FrontDoorOriginResource afdOrigin = afdOriginLro.Value;
+                }
 
-                    //CreateAfdRuleSet
-                    Utilities.Log($"Creating a FrontDoor rule set");
-                    string afdRuleSetName = Utilities.CreateRandomName("AfdRuleSet");
-                    var afdRuleSetLro = await afdProfile.GetFrontDoorRuleSets().CreateOrUpdateAsync(WaitUntil.Completed, afdRuleSetName);
-                    FrontDoorRuleSetResource afdRuleSet = afdRuleSetLro.Value;
 
-                    //CreateAfdRoute
-                    Utilities.Log($"Creating a FrontDoor route");
-                    string afdRouteName = Utilities.CreateRandomName("AfdRoute");
-                    FrontDoorRouteData afdRouteDataInput = new FrontDoorRouteData
-                    {
-                        OriginGroupId = afdOriginGroup.Id,
-                        LinkToDefaultDomain = LinkToDefaultDomain.Enabled,
-                        EnabledState = EnabledState.Enabled,
-                        RuleSets =
+                //CreateAfdRuleSet
+                Utilities.Log($"Creating a rule set");
+                string afdRuleSetName = Utilities.CreateRandomName("AfdRuleSet");
+                var afdRuleSetLro = await afdProfile.GetFrontDoorRuleSets().CreateOrUpdateAsync(WaitUntil.Completed, afdRuleSetName);
+                FrontDoorRuleSetResource afdRuleSet = afdRuleSetLro.Value;
+
+                //CreateAfdRoute
+                Utilities.Log($"Creating a route");
+                string afdRouteName = Utilities.CreateRandomName("AfdRoute");
+                FrontDoorRouteData afdRouteDataInput = new FrontDoorRouteData
+                {
+                    OriginGroupId = afdOriginGroup.Id,
+                    LinkToDefaultDomain = LinkToDefaultDomain.Enabled,
+                    EnabledState = EnabledState.Enabled,
+                    RuleSets =
                         {
                             new WritableSubResource()
                             {
                                 Id = afdRuleSet.Id
                             }
                         },
-                        PatternsToMatch = { "/*" }
-                    };
-                    var afdRouteLro = await afdEndpointInstance.GetFrontDoorRoutes().CreateOrUpdateAsync(WaitUntil.Completed, afdRouteName, afdRouteDataInput);
-                    FrontDoorRouteResource afdRoute = afdRouteLro.Value;
-                }
+                    PatternsToMatch = { "/*" }
+                };
+                var afdRouteLro = await afdEndpointInstance.GetFrontDoorRoutes().CreateOrUpdateAsync(WaitUntil.Completed, afdRouteName, afdRouteDataInput);
+                FrontDoorRouteResource afdRoute = afdRouteLro.Value;
 
 
 
