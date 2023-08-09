@@ -18,15 +18,15 @@ extensions:
      2 in Southeast
      1 in Brazil
      1 in Japan
- - Create CDN profile using Standard Verizon SKU with endpoints in each region of Web apps.
- - Load some content (referenced by Web Apps) to the CDN endpoints.
-
+ - Create `Azure Front Door and CDN profile` and its endpoint
+ - Create origin for each region in the same origin group
+ - Create a route for endpoint
 
 ## Running this Sample ##
 
 To run this sample:
 
-Set the environment variable `AZURE_AUTH_LOCATION` with the full path for an auth file. See [how to create an auth file](https://github.com/Azure/azure-libraries-for-net/blob/master/AUTH.md).
+Set the environment variable `CLIENT_ID`,`CLIENT_SECRET`,`TENANT_ID`,`SUBSCRIPTION_ID` with the full path for an auth file. See [how to create an auth file](https://github.com/Azure/azure-libraries-for-net/blob/master/AUTH.md).
 
     git clone https://github.com/Azure-Samples/cdn-dotnet-manage-cdn.git
 
@@ -38,7 +38,7 @@ Set the environment variable `AZURE_AUTH_LOCATION` with the full path for an aut
 
 ## More information ##
 
-[Azure Management Libraries for C#](https://github.com/Azure/azure-sdk-for-net/tree/Fluent)
+[Azure Management Libraries for C#](https://github.com/Azure/azure-sdk-for-net)
 [Azure .Net Developer Center](https://azure.microsoft.com/en-us/develop/net/)
 If you don't have a Microsoft Azure subscription you can get a FREE trial account [here](http://go.microsoft.com/fwlink/?LinkId=330212)
 
