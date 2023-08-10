@@ -16,8 +16,6 @@ namespace ManageCdn
 {
     public class Program
     {
-        private static readonly string Suffix = ".azurewebsites.net";
-
         /**
          * Azure CDN sample for managing CDN profiles:
          * - Create 8 web apps in 8 regions:
@@ -68,14 +66,12 @@ namespace ManageCdn
                 // Create CDN profile using Standard Verizon SKU with endpoints in each region of Web apps.
                 Utilities.Log("Creating a CDN Profile");
                 string afdProfileName = Utilities.CreateRandomName("AFDProfile");
-                ProfileData afdProfileInput = new ProfileData("Global", new CdnSku { Name = CdnSkuName.PremiumAzureFrontDoor })
-                {
-                };
+                ProfileData afdProfileInput = new ProfileData("Global", new CdnSku { Name = CdnSkuName.PremiumAzureFrontDoor });
                 var afdProfileLro = await resourceGroup.GetProfiles().CreateOrUpdateAsync(WaitUntil.Completed, afdProfileName, afdProfileInput);
                 ProfileResource afdProfile = afdProfileLro.Value;
 
 
-                // CreateAfdEndpoint
+                // Create an endpoint
                 Utilities.Log($"Creating a FrontDoor endpoint..");
                 string afdEndpointName = Utilities.CreateRandomName("afdtestendpoint");
                 FrontDoorEndpointData input = new FrontDoorEndpointData(AzureLocation.WestUS)
@@ -83,9 +79,9 @@ namespace ManageCdn
                     EnabledState = EnabledState.Enabled,
                 };
                 var afdEndpointLro = await afdProfile.GetFrontDoorEndpoints().CreateOrUpdateAsync(WaitUntil.Completed, afdEndpointName, input);
-                FrontDoorEndpointResource afdEndpointInstance = afdEndpointLro.Value;
+                FrontDoorEndpointResource afdEndpoint = afdEndpointLro.Value;
 
-                // CreateAfdOriginGroup
+                // Create an origin group
                 Utilities.Log($"Creating an origin group..");
                 string afdOriginGroupName = Utilities.CreateRandomName("AfdOriginGroup");
                 FrontDoorOriginGroupData afdOriginGroupInput = new FrontDoorOriginGroupData
@@ -109,7 +105,7 @@ namespace ManageCdn
 
                 foreach (var website in websites)
                 {
-                    // origin
+                    // create origin for each region
                     Utilities.Log($"Creating an origin for {website.Data.Location}-{website.Data.Name}");
                     string afdOriginName = Utilities.CreateRandomName("AfdOrigin");
                     FrontDoorOriginData afdOriginInput = new FrontDoorOriginData
@@ -122,8 +118,7 @@ namespace ManageCdn
                         Weight = 1000,
                         EnabledState = EnabledState.Enabled,
                     };
-                    var afdOriginLro = await afdOriginGroup.GetFrontDoorOrigins().CreateOrUpdateAsync(WaitUntil.Completed, afdOriginName, afdOriginInput);
-                    FrontDoorOriginResource afdOrigin = afdOriginLro.Value;
+                    _ =  await afdOriginGroup.GetFrontDoorOrigins().CreateOrUpdateAsync(WaitUntil.Completed, afdOriginName, afdOriginInput);
                 }
 
                 //CreateAfdRoute
@@ -138,7 +133,7 @@ namespace ManageCdn
                     ForwardingProtocol  = ForwardingProtocol.MatchRequest,
                     HttpsRedirect = HttpsRedirect.Enabled
                 };
-                var afdRouteLro = await afdEndpointInstance.GetFrontDoorRoutes().CreateOrUpdateAsync(WaitUntil.Completed, afdRouteName, afdRouteDataInput);
+                var afdRouteLro = await afdEndpoint.GetFrontDoorRoutes().CreateOrUpdateAsync(WaitUntil.Completed, afdRouteName, afdRouteDataInput);
                 FrontDoorRouteResource afdRoute = afdRouteLro.Value;
 
                 Utilities.Log("Usually, deploying Azure Front Door takes a few minutes.");
@@ -171,9 +166,6 @@ namespace ManageCdn
                 var subscription = Environment.GetEnvironmentVariable("SUBSCRIPTION_ID");
                 ClientSecretCredential credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
                 ArmClient client = new ArmClient(credential, subscription);
-
-                // Print selected subscription
-                Utilities.Log("Selected subscription: " + subscription);
 
                 await RunSample(client);
             }
