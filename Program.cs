@@ -16,6 +16,8 @@ namespace ManageCdn
 {
     public class Program
     {
+        private static ResourceIdentifier? _resourceGroupId = null;
+
         /**
          * Azure CDN sample for managing CDN profiles:
          * - Create 8 web apps in 8 regions:
@@ -29,17 +31,19 @@ namespace ManageCdn
          */
         public static async Task RunSample(ArmClient client)
         {
-            // Get default subscription
-            SubscriptionResource subscription = await client.GetDefaultSubscriptionAsync();
-
-            // Create a resource group in the EastUS region
-            string rgName = Utilities.CreateRandomName("CdnRG");
-            ArmOperation<ResourceGroupResource> rgLro = await subscription.GetResourceGroups().CreateOrUpdateAsync(WaitUntil.Completed, rgName, new ResourceGroupData(AzureLocation.EastUS));
-            ResourceGroupResource resourceGroup = rgLro.Value;
-            Utilities.Log($"created resource group:{resourceGroup.Data.Name}");
-
             try
             {
+                // Get default subscription
+                SubscriptionResource subscription = await client.GetDefaultSubscriptionAsync();
+
+                // Create a resource group in the EastUS region
+                string rgName = Utilities.CreateRandomName("CdnRG");
+                Utilities.Log($"Creating a resource group..");
+                ArmOperation<ResourceGroupResource> rgLro = await subscription.GetResourceGroups().CreateOrUpdateAsync(WaitUntil.Completed, rgName, new ResourceGroupData(AzureLocation.EastUS));
+                ResourceGroupResource resourceGroup = rgLro.Value;
+                _resourceGroupId = resourceGroup.Id;
+                Utilities.Log($"Created a resource group with name: {resourceGroup.Data.Name}");
+
                 // ============================================================
                 // Create 8 websites
                 List<WebSiteResource> websites = new List<WebSiteResource>();
@@ -48,7 +52,7 @@ namespace ManageCdn
                 websites.Add(await CreateWebApp(resourceGroup, AzureLocation.EastUS));
                 websites.Add(await CreateWebApp(resourceGroup, AzureLocation.WestUS));
 
-                //2 in EU
+                // 2 in EU
                 websites.Add(await CreateWebApp(resourceGroup, AzureLocation.NorthEurope));
                 websites.Add(await CreateWebApp(resourceGroup, AzureLocation.WestEurope));
 
@@ -143,9 +147,12 @@ namespace ManageCdn
             {
                 try
                 {
-                    Utilities.Log("Deleting Resource Group: " + rgName);
-                    await resourceGroup.DeleteAsync(WaitUntil.Completed);
-                    Utilities.Log("Deleted Resource Group: " + rgName);
+                    if (_resourceGroupId is not null)
+                    {
+                        Utilities.Log($"Deleting Resource Group: {_resourceGroupId}");
+                        await client.GetResourceGroupResource(_resourceGroupId).DeleteAsync(WaitUntil.Completed);
+                        Utilities.Log($"Deleted Resource Group: {_resourceGroupId}");
+                    }
                 }
                 catch
                 {
