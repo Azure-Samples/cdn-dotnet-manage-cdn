@@ -1,23 +1,22 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License. See License.txt in the project root for license information. 
 
-using Microsoft.Azure.Management.Samples.Common;
-using System;
-using System.Collections.Generic;
-using System.Net.Http;
-using Microsoft.Azure.Management.Fluent;
-using Microsoft.Azure.Management.ResourceManager.Fluent;
-using Microsoft.Azure.Management.ResourceManager.Fluent.Core;
-using Microsoft.Azure.Management.ResourceManager.Fluent.Core.ResourceActions;
-using Microsoft.Azure.Management.Cdn.Fluent;
-using Microsoft.Azure.Management.Cdn.Fluent.Models;
-using Microsoft.Azure.Management.AppService.Fluent;
+using Azure;
+using Azure.Core;
+using Azure.Identity;
+using Azure.ResourceManager;
+using Azure.ResourceManager.AppService;
+using Azure.ResourceManager.Cdn;
+using Azure.ResourceManager.Cdn.Models;
+using Azure.ResourceManager.Resources;
+using Azure.ResourceManager.Resources.Models;
+using Azure.ResourceManager.Samples.Common;
 
 namespace ManageCdn
 {
     public class Program
     {
-        private static readonly string Suffix = ".azurewebsites.net";
+        private static ResourceIdentifier? _resourceGroupId = null;
 
         /**
          * Azure CDN sample for managing CDN profiles:
@@ -30,92 +29,130 @@ namespace ManageCdn
          * - Create CDN profile using Standard Verizon SKU with endpoints in each region of Web apps.
          * - Load some content (referenced by Web Apps) to the CDN endpoints.
          */
-        public static void RunSample(IAzure azure)
+        public static async Task RunSample(ArmClient client)
         {
-            string cdnProfileName = Utilities.CreateRandomName("cdnStandardProfile");
-            string rgName = SdkContext.RandomResourceName("rgCDN_", 24);
-            var appNames = new string[7];
-
             try
             {
+                // Get default subscription
+                SubscriptionResource subscription = await client.GetDefaultSubscriptionAsync();
 
-                azure.ResourceGroups.Define(rgName)
-                        .WithRegion(Region.USCentral)
-                        .Create();
+                // Create a resource group in the EastUS region
+                string rgName = Utilities.CreateRandomName("CdnRG");
+                Utilities.Log($"Creating a resource group..");
+                ArmOperation<ResourceGroupResource> rgLro = await subscription.GetResourceGroups().CreateOrUpdateAsync(WaitUntil.Completed, rgName, new ResourceGroupData(AzureLocation.EastUS));
+                ResourceGroupResource resourceGroup = rgLro.Value;
+                _resourceGroupId = resourceGroup.Id;
+                Utilities.Log($"Created a resource group with name: {resourceGroup.Data.Name}");
 
                 // ============================================================
                 // Create 8 websites
-                for (int i = 0; i < 7; i++)
-                {
-                    appNames[i] = SdkContext.RandomResourceName("webapp" + (i + 1) + "-", 20);
-                }
+                List<WebSiteResource> websites = new List<WebSiteResource>();
 
                 // 2 in US
-                CreateWebApp(azure, rgName, appNames[0], Region.USWest);
-                CreateWebApp(azure, rgName, appNames[1], Region.USEast);
+                websites.Add(await CreateWebApp(resourceGroup, AzureLocation.EastUS));
+                websites.Add(await CreateWebApp(resourceGroup, AzureLocation.WestUS));
 
                 // 2 in EU
-                CreateWebApp(azure, rgName, appNames[2], Region.EuropeWest);
-                CreateWebApp(azure, rgName, appNames[3], Region.EuropeNorth);
+                websites.Add(await CreateWebApp(resourceGroup, AzureLocation.NorthEurope));
+                websites.Add(await CreateWebApp(resourceGroup, AzureLocation.WestEurope));
 
                 // 2 in Southeast
-                CreateWebApp(azure, rgName, appNames[4], Region.AsiaSouthEast);
-                CreateWebApp(azure, rgName, appNames[5], Region.AustraliaSouthEast);
+                websites.Add(await CreateWebApp(resourceGroup, AzureLocation.EastAsia));
+                websites.Add(await CreateWebApp(resourceGroup, AzureLocation.SoutheastAsia));
 
                 // 1 in Brazil
-                // CreateWebApp(azure, rgName, appNames[6], Region.BrazilSouth);
+                websites.Add(await CreateWebApp(resourceGroup, AzureLocation.BrazilSouth));
 
                 // 1 in Japan
-                CreateWebApp(azure, rgName, appNames[6], Region.JapanWest);
+                websites.Add(await CreateWebApp(resourceGroup, AzureLocation.JapanWest));
 
                 // =======================================================================================
                 // Create CDN profile using Standard Verizon SKU with endpoints in each region of Web apps.
                 Utilities.Log("Creating a CDN Profile");
+                string afdProfileName = Utilities.CreateRandomName("AFDProfile");
+                ProfileData afdProfileInput = new ProfileData("Global", new CdnSku { Name = CdnSkuName.PremiumAzureFrontDoor });
+                var afdProfileLro = await resourceGroup.GetProfiles().CreateOrUpdateAsync(WaitUntil.Completed, afdProfileName, afdProfileInput);
+                ProfileResource afdProfile = afdProfileLro.Value;
 
-                // create Cdn Profile definition object that will let us do a for loop
-                // to define all 8 endpoints and then parallelize their creation
-                var profileDefinition = azure.CdnProfiles.Define(cdnProfileName)
-                        .WithRegion(Region.USSouthCentral)
-                        .WithExistingResourceGroup(rgName)
-                        .WithStandardVerizonSku();
 
-                // define all the endpoints. We need to keep track of the last creatable stage
-                // to be able to call create on the entire Cdn profile deployment definition.
-                ICreatable<ICdnProfile> cdnCreatable = null;
-                foreach (var webSite in appNames)
+                // Create an endpoint
+                Utilities.Log($"Creating a FrontDoor endpoint..");
+                string afdEndpointName = Utilities.CreateRandomName("afdtestendpoint");
+                FrontDoorEndpointData input = new FrontDoorEndpointData(AzureLocation.WestUS)
                 {
-                    cdnCreatable = profileDefinition
-                            .DefineNewEndpoint()
-                                .WithOrigin(webSite + Suffix)
-                                .WithHostHeader(webSite + Suffix)
-                                .WithCompressionEnabled(true)
-                                .WithContentTypeToCompress("application/javascript")
-                                .WithQueryStringCachingBehavior(QueryStringCachingBehavior.IgnoreQueryString)
-                            .Attach();
+                    EnabledState = EnabledState.Enabled,
+                };
+                var afdEndpointLro = await afdProfile.GetFrontDoorEndpoints().CreateOrUpdateAsync(WaitUntil.Completed, afdEndpointName, input);
+                FrontDoorEndpointResource afdEndpoint = afdEndpointLro.Value;
+
+                // Create an origin group
+                Utilities.Log($"Creating an origin group..");
+                string afdOriginGroupName = Utilities.CreateRandomName("AfdOriginGroup");
+                FrontDoorOriginGroupData afdOriginGroupInput = new FrontDoorOriginGroupData
+                {
+                    HealthProbeSettings = new HealthProbeSettings
+                    {
+                        ProbePath = "/",
+                        ProbeProtocol = HealthProbeProtocol.Http,
+                        ProbeRequestType = HealthProbeRequestType.Head,
+                        ProbeIntervalInSeconds = 100
+                    },
+                    LoadBalancingSettings = new LoadBalancingSettings
+                    {
+                        SampleSize = 4,
+                        SuccessfulSamplesRequired = 3,
+                        AdditionalLatencyInMilliseconds = 50
+                    }
+                };
+                var afdOriginGroupLro = await afdProfile.GetFrontDoorOriginGroups().CreateOrUpdateAsync(WaitUntil.Completed, afdOriginGroupName, afdOriginGroupInput);
+                FrontDoorOriginGroupResource afdOriginGroup = afdOriginGroupLro.Value;
+
+                foreach (var website in websites)
+                {
+                    // create origin for each region
+                    Utilities.Log($"Creating an origin for {website.Data.Location}-{website.Data.Name}");
+                    string afdOriginName = Utilities.CreateRandomName("AfdOrigin");
+                    FrontDoorOriginData afdOriginInput = new FrontDoorOriginData
+                    {
+                        HostName = website.Data.DefaultHostName,
+                        OriginHostHeader = website.Data.DefaultHostName,
+                        HttpPort  = 80,
+                        HttpsPort = 443,
+                        Priority = 1,
+                        Weight = 1000,
+                        EnabledState = EnabledState.Enabled,
+                    };
+                    _ =  await afdOriginGroup.GetFrontDoorOrigins().CreateOrUpdateAsync(WaitUntil.Completed, afdOriginName, afdOriginInput);
                 }
 
-                // create profile and then all the defined endpoints in parallel
-                ICdnProfile profile = cdnCreatable.Create();
-
-                // =======================================================================================
-                // Load some content (referenced by Web Apps) to the CDN endpoints.
-                var contentToLoad = new HashSet<string>();
-                contentToLoad.Add("/server.js");
-                contentToLoad.Add("/pictures/microsoft_logo.png");
-
-                foreach (ICdnEndpoint endpoint in profile.Endpoints.Values)
+                //CreateAfdRoute
+                Utilities.Log($"Creating a route");
+                string afdRouteName = Utilities.CreateRandomName("AfdRoute");
+                FrontDoorRouteData afdRouteDataInput = new FrontDoorRouteData
                 {
-                    endpoint.LoadContent(contentToLoad);
-                }
+                    OriginGroupId = afdOriginGroup.Id,
+                    LinkToDefaultDomain = LinkToDefaultDomain.Enabled,
+                    EnabledState = EnabledState.Enabled,
+                    PatternsToMatch = { "/*" },
+                    ForwardingProtocol  = ForwardingProtocol.MatchRequest,
+                    HttpsRedirect = HttpsRedirect.Enabled
+                };
+                var afdRouteLro = await afdEndpoint.GetFrontDoorRoutes().CreateOrUpdateAsync(WaitUntil.Completed, afdRouteName, afdRouteDataInput);
+                FrontDoorRouteResource afdRoute = afdRouteLro.Value;
 
+                Utilities.Log("Usually, deploying Azure Front Door takes a few minutes.");
+                Utilities.Log($"After the AFD deployment is complete, you can browse {afdRoute.Data.EndpointName} to verify.");
             }
             finally
             {
                 try
                 {
-                    Utilities.Log("Deleting Resource Group: " + rgName);
-                    azure.ResourceGroups.DeleteByName(rgName);
-                    Utilities.Log("Deleted Resource Group: " + rgName);
+                    if (_resourceGroupId is not null)
+                    {
+                        Utilities.Log($"Deleting Resource Group: {_resourceGroupId}");
+                        await client.GetResourceGroupResource(_resourceGroupId).DeleteAsync(WaitUntil.Completed);
+                        Utilities.Log($"Deleted Resource Group: {_resourceGroupId}");
+                    }
                 }
                 catch
                 {
@@ -123,24 +160,21 @@ namespace ManageCdn
                 }
             }
         }
-        public static void Main(string[] args)
+
+        public static async Task Main(string[] args)
         {
             try
             {
                 //=================================================================
                 // Authenticate
-                var credentials = SdkContext.AzureCredentialsFactory.FromFile(Environment.GetEnvironmentVariable("AZURE_AUTH_LOCATION"));
+                var clientId = Environment.GetEnvironmentVariable("CLIENT_ID");
+                var clientSecret = Environment.GetEnvironmentVariable("CLIENT_SECRET");
+                var tenantId = Environment.GetEnvironmentVariable("TENANT_ID");
+                var subscription = Environment.GetEnvironmentVariable("SUBSCRIPTION_ID");
+                ClientSecretCredential credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
+                ArmClient client = new ArmClient(credential, subscription);
 
-                var azure = Azure
-                    .Configure()
-                    .WithLogLevel(HttpLoggingDelegatingHandler.Level.Basic)
-                    .Authenticate(credentials)
-                    .WithDefaultSubscription();
-
-                // Print selected subscription
-                Utilities.Log("Selected subscription: " + azure.SubscriptionId);
-
-                RunSample(azure);
+                await RunSample(client);
             }
             catch (Exception e)
             {
@@ -148,30 +182,20 @@ namespace ManageCdn
             }
         }
 
-        private static IWebApp CreateWebApp(IAzure azure, string rgName, string appName, Region region)
+        private static async Task<WebSiteResource> CreateWebApp(ResourceGroupResource resourceGroup, AzureLocation location)
         {
-            var appUrl = appName + Suffix;
+            string appNamePrefix = "sampletestwebapp";
+            var appName = Utilities.CreateRandomName(appNamePrefix);
+            Utilities.Log($"Creating {location} web app: {appName}...");
 
-            Utilities.Log("Creating web app " + appName + " with master branch...");
+            WebSiteCollection collection = resourceGroup.GetWebSites();
+            WebSiteData data = new WebSiteData(location){};
+            ArmOperation<WebSiteResource> lro = await collection.CreateOrUpdateAsync(WaitUntil.Completed, appName, data);
+            WebSiteResource app = lro.Value;
 
-            var app = azure.WebApps
-                    .Define(appName)
-                    .WithRegion(region)
-                    .WithExistingResourceGroup(rgName)
-                    .WithNewWindowsPlan(PricingTier.StandardS1)
-                    .WithJavaVersion(JavaVersion.V8Newest)
-                    .WithWebContainer(WebContainer.Tomcat8_0Newest)
-                    .DefineSourceControl()
-                        .WithPublicGitRepository("https://github.com/jianghaolu/azure-site-test")
-                        .WithBranch("master")
-                        .Attach()
-                    .Create();
-
-            Utilities.Log("Created web app " + app.Name);
-            Utilities.Print(app);
-
-            Utilities.Log("CURLing " + appUrl + "...");
-            Utilities.Log(Utilities.CheckAddress("http://" + appUrl));
+            Utilities.Log("Created web app " + app.Data.Name);
+            Utilities.Log("CURLing " + app.Data.DefaultHostName + "...");
+            Utilities.Log(Utilities.CheckAddress("http://" + app.Data.DefaultHostName));
             return app;
         }
     }
